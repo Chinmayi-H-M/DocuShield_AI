@@ -1,4 +1,6 @@
 import os
+import datetime
+import logging
 import hashlib
 import json
 import uuid
@@ -9,11 +11,13 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas, security
 from app.config import settings
-from app.services import forensics, ocr, validator
+from app.services import forensics, ocr, validator, risk_score
+
+logger = logging.getLogger("docushield.pipeline")
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-@router.post("/upload", response_model=List[schemas.DocumentResponse])
+@router.post("/upload", response_model=List[schemas.DocumentAnalysisResponse])
 def upload_documents(
     files: List[UploadFile] = File(...),
     current_user: models.User = Depends(security.get_current_active_user),
@@ -22,6 +26,13 @@ def upload_documents(
     results = []
     
     for upload_file in files:
+        # Structured log: upload started
+        logger.info(json.dumps({
+            "event": "upload_started",
+            "file_name": upload_file.filename,
+            "user": current_user.username
+        }))
+
         # 1. Read file and compute hash
         file_bytes = upload_file.file.read()
         file_hash = hashlib.md5(file_bytes).hexdigest()
@@ -36,7 +47,31 @@ def upload_documents(
                 status="Warn"
             ))
             db.commit()
-            results.append(existing_doc)
+            
+            # Reconstruct the DocumentAnalysisResponse structure for the duplicate document
+            reasons = []
+            if existing_doc.explainable_ai_reasons:
+                try:
+                    reasons = json.loads(existing_doc.explainable_ai_reasons)
+                except Exception:
+                    reasons = []
+            
+            meta_json = {}
+            if existing_doc.metadata_json:
+                try:
+                    meta_json = json.loads(existing_doc.metadata_json)
+                except Exception:
+                    meta_json = {}
+                    
+            results.append({
+                "document_id": existing_doc.document_id or str(uuid.uuid4()),
+                "status": existing_doc.analysis_status or "processed",
+                "ocr_text": existing_doc.extracted_text or "",
+                "metadata": meta_json,
+                "risk_score": existing_doc.risk_score or existing_doc.fraud_score or 0.0,
+                "risk_level": existing_doc.risk_level or "Low",
+                "issues": reasons
+            })
             continue
             
         # 2. Save file
@@ -47,71 +82,72 @@ def upload_documents(
         with open(saved_path, "wb") as buffer:
             buffer.write(file_bytes)
             
+        # Generate unique document ID
+        doc_uuid = str(uuid.uuid4())
+            
         # 3. Process ELA (Error Level Analysis)
         ela_path = forensics.run_error_level_analysis(saved_path)
         
         # 4. Process Metadata Analysis
-        meta_report = forensics.inspect_metadata(saved_path)
+        meta_report = forensics.inspect_metadata(saved_path, original_filename=upload_file.filename)
+        
+        # Structured log: metadata extracted
+        logger.info(json.dumps({
+            "event": "metadata_extracted",
+            "document_id": doc_uuid,
+            "file_name": upload_file.filename,
+            "metadata_status": meta_report.get("status")
+        }))
         
         # 5. Process OCR text & OCR Font/Signature Analysis
-        ocr_report = ocr.analyze_ocr_layout(saved_path)
+        ocr_failed = False
+        try:
+            ocr_report = ocr.analyze_ocr_layout(saved_path, original_filename=upload_file.filename)
+        except Exception as e:
+            ocr_report = {"text_blocks": [], "font_analysis": {"status": "Passed", "variances": []}, "signature_analysis": {"status": "Passed"}}
+            ocr_failed = True
+            
+        # Structured log: OCR completed
+        logger.info(json.dumps({
+            "event": "ocr_completed",
+            "document_id": doc_uuid,
+            "file_name": upload_file.filename,
+            "ocr_failed": ocr_failed
+        }))
         
-        # 6. Synthesize Fraud Score
-        # Start base score from ELA, Metadata warnings, and OCR font anomalies
-        fraud_score = 4.0
-        confidence = 95.0
-        reasons = []
+        # 6. Calculate Risk Score
+        risk_report = risk_score.calculate_risk_score(
+            meta_report=meta_report,
+            ocr_report=ocr_report,
+            ocr_failed=ocr_failed
+        )
         
-        if meta_report["status"] == "Tampered":
-            fraud_score += 40.0
-            reasons.append("EXIF metadata reports document was modified in photo-editing software.")
-        elif meta_report["status"] == "Alert":
-            fraud_score += 20.0
-            reasons.append("Anomalous metadata structure found (post-creation alterations).")
-            
-        if ocr_report["font_analysis"]["status"] == "Alert":
-            fraud_score += 25.0
-            confidence -= 5.0
-            for var in ocr_report["font_analysis"]["variances"]:
-                reasons.append(var["issue"])
-                
-        if ocr_report["signature_analysis"]["status"] == "Alert":
-            fraud_score += 25.0
-            confidence -= 8.0
-            reasons.append(ocr_report["signature_analysis"].get("issue", "Signature discrepancy identified."))
-            
-        # Bound fraud score between 0 and 100
-        fraud_score = min(max(fraud_score, 1.0), 99.5)
+        # Structured log: risk score generated
+        logger.info(json.dumps({
+            "event": "risk_score_generated",
+            "document_id": doc_uuid,
+            "risk_score": risk_report["risk_score"],
+            "risk_level": risk_report["risk_level"]
+        }))
         
-        # Categorize risk levels
-        if fraud_score < 15.0:
-            risk = "Low"
-        elif fraud_score < 40.0:
-            risk = "Medium"
-        elif fraud_score < 75.0:
-            risk = "High"
-        else:
-            risk = "Critical"
-            
-        # If clean, supply default reason
-        if not reasons:
-            reasons.append("All digital layout criteria match bank verification parameters.")
-            
-        # Set statuses
-        metadata_status = meta_report["status"]
-        font_status = ocr_report["font_analysis"]["status"]
-        signature_status = ocr_report["signature_analysis"]["status"]
+        # Prepare other fields for db record
+        fraud_score = risk_report["risk_score"]
+        confidence = 100.0 - (fraud_score * 0.1)
+        
+        metadata_status = meta_report.get("status", "Passed")
+        font_status = ocr_report.get("font_analysis", {}).get("status", "Passed")
+        signature_status = ocr_report.get("signature_analysis", {}).get("status", "Passed")
         compression_status = "Alert" if fraud_score > 50.0 else "Passed"
-
+        
         # 7. Create Document record
         doc_record = models.Document(
             file_name=upload_file.filename,
             file_type=upload_file.filename.split('.')[-1].upper(),
             file_path=saved_path,
             file_hash=file_hash,
-            fraud_score=round(fraud_score, 1),
-            confidence_score=round(confidence, 1),
-            risk_level=risk,
+            fraud_score=round(float(fraud_score), 1),
+            confidence_score=round(float(confidence), 1),
+            risk_level=risk_report["risk_level"],
             metadata_status=metadata_status,
             font_status=font_status,
             signature_status=signature_status,
@@ -123,18 +159,40 @@ def upload_documents(
             ] if fraud_score > 50.0 else [])),
             extracted_text=ocr_report.get("extracted_text", "Sample text"),
             metadata_json=json.dumps(meta_report),
-            explainable_ai_reasons=json.dumps(reasons)
+            explainable_ai_reasons=json.dumps(risk_report["issues"]),
+            
+            # New processing pipeline columns
+            document_id=doc_uuid,
+            upload_time=datetime.datetime.utcnow(),
+            analysis_status="processed",
+            risk_score=float(fraud_score)
         )
         
         db.add(doc_record)
         db.add(models.AuditLog(
             username=current_user.username,
-            event=f"Uploaded and analyzed document: {upload_file.filename}. Fraud Score: {doc_record.fraud_score}%, Risk: {risk}.",
-            status="Success" if risk == "Low" else "Warn"
+            event=f"Uploaded and analyzed document: {upload_file.filename}. Risk Score: {fraud_score}%, Risk Level: {risk_report['risk_level']}.",
+            status="Success" if risk_report["risk_level"] == "Low" else "Warn"
         ))
         db.commit()
         db.refresh(doc_record)
-        results.append(doc_record)
+        
+        # Structured log: database saved
+        logger.info(json.dumps({
+            "event": "database_saved",
+            "document_id": doc_uuid,
+            "db_record_id": doc_record.id
+        }))
+        
+        results.append({
+            "document_id": doc_uuid,
+            "status": "processed",
+            "ocr_text": doc_record.extracted_text,
+            "metadata": meta_report,
+            "risk_score": float(fraud_score),
+            "risk_level": risk_report["risk_level"],
+            "issues": risk_report["issues"]
+        })
         
     return results
 
@@ -159,10 +217,12 @@ def get_document_details(
     # De-serialize JSON properties
     return {
         "id": doc.id,
+        "document_id": doc.document_id,
         "file_name": doc.file_name,
         "file_type": doc.file_type,
         "file_path": doc.file_path,
         "fraud_score": doc.fraud_score,
+        "risk_score": doc.risk_score,
         "confidence_score": doc.confidence_score,
         "risk_level": doc.risk_level,
         "metadata_status": doc.metadata_status,
@@ -170,6 +230,8 @@ def get_document_details(
         "signature_status": doc.signature_status,
         "compression_status": doc.compression_status,
         "uploaded_at": doc.uploaded_at,
+        "upload_time": doc.upload_time,
+        "analysis_status": doc.analysis_status,
         
         # Decoded strings
         "tamper_regions": json.loads(doc.tamper_regions or "[]"),

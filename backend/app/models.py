@@ -42,6 +42,12 @@ class Document(Base):
     uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
     uploaded_by_id = Column(Integer, ForeignKey("users.id"))
     
+    # New processing pipeline columns
+    document_id = Column(String, unique=True, index=True, nullable=True)
+    upload_time = Column(DateTime, default=datetime.datetime.utcnow, nullable=True)
+    analysis_status = Column(String, default="pending", nullable=True)
+    risk_score = Column(Float, default=0.0, nullable=True)
+    
     # Bounding box coords / heatmap overlays (JSON-serialized strings for simple SQL support)
     tamper_regions = Column(Text, nullable=True)  # JSON representation of bounding boxes & risk levels
     extracted_text = Column(Text, nullable=True)

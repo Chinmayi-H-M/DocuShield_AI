@@ -1,11 +1,11 @@
 import os
 
-def analyze_ocr_layout(file_path: str) -> dict:
+def analyze_ocr_layout(file_path: str, original_filename: str = None) -> dict:
     """
     Simulates LayoutLMv3 and PaddleOCR bounding box extraction.
     Returns extracted labels, positions, confidence levels, and font consistency statuses.
     """
-    basename = os.path.basename(file_path).lower()
+    basename = (original_filename if original_filename else os.path.basename(file_path)).lower()
     
     # Setup standard text and layout boxes
     layout_data = {
@@ -46,5 +46,8 @@ def analyze_ocr_layout(file_path: str) -> dict:
             "confidence": 62.1,
             "issue": "Co-applicant signature appears digitally copy-pasted (identical transparent pixel grid matched with external documents)."
         }
+
+    # Generate concatenated extracted_text from blocks
+    layout_data["extracted_text"] = "\n".join([block["text"] for block in layout_data["text_blocks"]])
 
     return layout_data
