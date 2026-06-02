@@ -55,6 +55,18 @@ class DocumentResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class DocumentAnalysisResponse(BaseModel):
+    document_id: str
+    status: str
+    ocr_text: str
+    metadata: dict
+    risk_score: float
+    risk_level: str
+    issues: List[str]
+
+    class Config:
+        from_attributes = True
+
 class AuditLogResponse(BaseModel):
     id: int
     timestamp: datetime

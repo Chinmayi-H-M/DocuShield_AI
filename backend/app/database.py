@@ -25,3 +25,19 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def run_db_migrations():
+    from sqlalchemy import text
+    columns = [
+        ("document_id", "VARCHAR"),
+        ("upload_time", "DATETIME"),
+        ("analysis_status", "VARCHAR"),
+        ("risk_score", "FLOAT")
+    ]
+    with engine.begin() as conn:
+        for col, col_type in columns:
+            try:
+                conn.execute(text(f"ALTER TABLE documents ADD COLUMN {col} {col_type}"))
+            except Exception as e:
+                # Column probably already exists or table doesn't exist
+                pass

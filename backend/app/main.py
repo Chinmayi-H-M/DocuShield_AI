@@ -3,12 +3,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from app.config import settings
-from app.database import Base, engine, SessionLocal
+from app.database import Base, engine, SessionLocal, run_db_migrations
 from app.routers import auth, documents, graph, analytics, audits
 from app.services.sample_data import seed_database
 
 # Create tables
 Base.metadata.create_all(bind=engine)
+
+# Run database migrations for new columns
+run_db_migrations()
 
 # Seed database on start
 db = SessionLocal()
