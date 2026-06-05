@@ -31,3 +31,7 @@ __pycache__/
 # OS files
 .DS_Store
 Thumbs.db
+
+document_forensics/forensic_output/
+__pycache__/
+*.pyc

@@ -1,6 +1,0 @@
-============================================================
-DOCUMENT HISTORICAL LIFECYCLE TIMELINE
-============================================================
-[2026-06-01 09:00:00] DOCUMENT CREATED
-  └─ File initialized. Creator/Author: 'Bank Scan Room A', Software used: 'HP ScanJet Enterprise 8500'.
-============================================================
