@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import Base, engine, SessionLocal, run_db_migrations
-from app.routers import auth, documents, graph, analytics, audits
+from app.routers import auth, documents, graph, analytics, audits, ml
 from app.services.sample_data import seed_database
 
 # Create tables
@@ -43,6 +43,7 @@ app.include_router(documents.router, prefix=settings.API_V1_STR)
 app.include_router(graph.router, prefix=settings.API_V1_STR)
 app.include_router(analytics.router, prefix=settings.API_V1_STR)
 app.include_router(audits.router, prefix=settings.API_V1_STR)
+app.include_router(ml.router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 def read_root():
