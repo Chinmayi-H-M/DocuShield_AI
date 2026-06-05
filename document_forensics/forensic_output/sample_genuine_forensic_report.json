@@ -1,0 +1,33 @@
+{
+    "authenticity_score": 100,
+    "risk_level": "Genuine / Low Risk",
+    "metadata_findings": [
+        "No metadata anomalies or warnings found."
+    ],
+    "ela_findings": [
+        "No significant ELA pixel differences detected.",
+        "Heatmap file: sample_genuine_ela_heatmap.png",
+        "Bounding boxes file: sample_genuine_suspicious_regions.png"
+    ],
+    "timeline": {
+        "events_count": 1,
+        "events": [
+            {
+                "timestamp": "2026-06-01T09:00:00",
+                "date_readable": "2026-06-01 09:00:00",
+                "event_type": "Document Created",
+                "description": "File initialized. Creator/Author: 'Bank Scan Room A', Software used: 'HP ScanJet Enterprise 8500'."
+            }
+        ],
+        "report_path": "./forensic_output\\sample_genuine_timeline_report.txt"
+    },
+    "pdf_structure_findings": {
+        "fonts_used": [],
+        "font_consistency_warnings": [],
+        "incremental_updates_count": 1,
+        "has_structural_tampering_warnings": false
+    },
+    "suspicious_regions": 0,
+    "deductions": [],
+    "explanation": "The document is classified as Genuine / Low Risk. No metadata anomalies, missing fields, or suspicious compression variances were detected. The document appears untampered."
+}

@@ -1,0 +1,10 @@
+============================================================
+DOCUMENT HISTORICAL LIFECYCLE TIMELINE
+============================================================
+[2026-06-01 09:00:00 (UTC+05:30)] DOCUMENT CREATED
+  └─ File initialized. Creator/Author: 'Applicant Upload', Software used: 'Canva Web Editor'.
+  │
+  ▼
+[2026-06-03 17:45:12 (UTC+05:30)] DOCUMENT MODIFIED
+  └─ File modified/saved. Producer/Library: 'Canva PDF Export Engine'.
+============================================================

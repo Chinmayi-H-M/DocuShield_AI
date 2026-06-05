@@ -1,0 +1,48 @@
+{
+    "authenticity_score": 75,
+    "risk_level": "Medium Risk",
+    "metadata_findings": [
+        "ANOMALY: Temporal anomaly: Document modified after creation. Time difference: 56.75 hours.",
+        "WARNING: Editing software signature detected: 'Canva Web Editor'",
+        "WARNING: Document modified after creation. Time difference: 56.75 hours."
+    ],
+    "ela_findings": [
+        "ELA is not performed directly on PDF documents. PDF pages must be rendered to images first."
+    ],
+    "timeline": {
+        "events_count": 2,
+        "events": [
+            {
+                "timestamp": "2026-06-01T09:00:00+05:30",
+                "date_readable": "2026-06-01 09:00:00 (UTC+05:30)",
+                "event_type": "Document Created",
+                "description": "File initialized. Creator/Author: 'Applicant Upload', Software used: 'Canva Web Editor'."
+            },
+            {
+                "timestamp": "2026-06-03T17:45:12+05:30",
+                "date_readable": "2026-06-03 17:45:12 (UTC+05:30)",
+                "event_type": "Document Modified",
+                "description": "File modified/saved. Producer/Library: 'Canva PDF Export Engine'."
+            }
+        ],
+        "report_path": "./forensic_output\\sample_invoice_timeline_report.txt"
+    },
+    "pdf_structure_findings": {
+        "fonts_used": [],
+        "font_consistency_warnings": [],
+        "incremental_updates_count": 1,
+        "has_structural_tampering_warnings": false
+    },
+    "suspicious_regions": 0,
+    "deductions": [
+        {
+            "factor": "Editing software metadata signature found (Canva Web Editor)",
+            "points": 10
+        },
+        {
+            "factor": "Temporal date anomalies detected (e.g. document modified post-creation or date spoofing)",
+            "points": 15
+        }
+    ],
+    "explanation": "The document is classified as Medium Risk with an Authenticity Score of 75/100.\nDeductions were applied for the following reasons:\n  - Editing software metadata signature found (Canva Web Editor) (-10 pts)\n  - Temporal date anomalies detected (e.g. document modified post-creation or date spoofing) (-15 pts)\n\nWarning: The document contains warnings (e.g. edited with Canva or has a date gap), but lacks strong proof of graphic alterations (no ELA anomalies or multiple saves found). Underwriting manual review is recommended."
+}
