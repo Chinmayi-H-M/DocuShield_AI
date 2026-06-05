@@ -32,4 +32,4 @@ __pycache__/
 .DS_Store
 Thumbs.db
 datasets/
-models/model.pth
+backend/models/model.pth
