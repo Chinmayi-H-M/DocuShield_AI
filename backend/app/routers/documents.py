@@ -11,8 +11,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas, security
 from app.config import settings
-from app.services import forensics, ocr, validator, risk_score, model_inference, layoutlmv3_service, neo4j_service, signature_service
-
+from app.services import forensics, ocr, validator, risk_score, model_inference, layoutlmv3_service, neo4j_service, signature_service, ml_pipeline
 logger = logging.getLogger("docushield.pipeline")
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -97,14 +96,19 @@ def upload_documents(
         # Generate unique document ID
         doc_uuid = str(uuid.uuid4())
             
-        # 3. Process ELA (Error Level Analysis)
+        # 3. Process ELA (Error Level Analysis) and get numeric score
         ela_path = forensics.run_error_level_analysis(saved_path)
+        ela_score = forensics.calculate_ela_score(ela_path)
         
         # Calculate dynamic ELA tamper regions
         detected_regions = forensics.detect_ela_anomalies(ela_path)
         
         # 4. Process Metadata Analysis
         meta_report = forensics.inspect_metadata(saved_path, original_filename=upload_file.filename)
+        
+        # Run Compression and Image Quality checks
+        compress_report = forensics.analyze_compression(saved_path)
+        quality_report = forensics.analyze_image_quality(saved_path)
         
         # Structured log: metadata extracted
         logger.info(json.dumps({
@@ -130,12 +134,22 @@ def upload_documents(
             "ocr_failed": ocr_failed
         }))
         
-        # 5b. Run AI/ML Document Forgery Classification (ResNet18)
+        # 5b. Run AI/ML Document Forgery Classification (ResNet50 / ML pipeline)
         try:
-            ml_prediction = model_inference.predict_document(saved_path)
+            ml_result = ml_pipeline.predict_document(file_bytes)
+            ml_score = ml_result["raw_score"]
+            ml_confidence = ml_result["confidence"]
+            # Convert prediction dictionary keys to match expected lowercase format
+            ml_prediction = {
+                "prediction": ml_result.get("prediction", "genuine").lower(),
+                "confidence": ml_result.get("confidence", 50.0) / 100.0,
+                "risk_level": ml_result.get("risk_level", "Low")
+            }
         except Exception as ml_err:
             logger.error(f"ML Classifier prediction failed: {ml_err}")
             ml_prediction = {"prediction": "genuine", "confidence": 0.5, "error": str(ml_err)}
+            ml_score = 0.0
+            ml_confidence = 50.0
 
         # 5c. Run LayoutLMv3 Document Intelligence
         layoutlm_intel = None
@@ -191,7 +205,7 @@ def upload_documents(
         except Exception as gnn_err:
             logger.error(f"GNN prediction failed in pipeline: {gnn_err}")
 
-        # 6. Calculate Risk Score
+        # 6. Calculate Forensic Risk Score incorporating quality, ELA, compression and local features
         risk_report = risk_score.calculate_risk_score(
             meta_report=meta_report,
             ocr_report=ocr_report,
@@ -202,27 +216,36 @@ def upload_documents(
             possible_forgery=sig_report["possible_forgery"],
             signature_similarity=sig_report["signature_similarity"],
             gnn_fraud_probability=gnn_report["gnn_fraud_probability"],
-            gnn_risk_level=gnn_report["risk_level"]
+            gnn_risk_level=gnn_report["risk_level"],
+            ela_score=ela_score,
+            compress_report=compress_report,
+            quality_report=quality_report
+        )
+
+        # Combined weighted score: 0.6 * ML + 0.4 * Forensics
+        fraud_score = ml_pipeline.combine_risk_score(
+            ml_score=ml_score,
+            forensic_score=risk_report["risk_score"]
+        )
         )
         
         # Structured log: risk score generated
         logger.info(json.dumps({
             "event": "risk_score_generated",
             "document_id": doc_uuid,
-            "risk_score": risk_report["risk_score"],
+            "risk_score": fraud_score,
             "risk_level": risk_report["risk_level"]
         }))
         
-        # Prepare other fields for db record
-        fraud_score = risk_report["risk_score"]
-        confidence = 100.0 - (fraud_score * 0.1)
+        # Use ML model prediction confidence for UI
+        confidence = ml_confidence
         
         metadata_status = meta_report.get("status", "Passed")
         font_status = ocr_report.get("font_analysis", {}).get("status", "Passed")
         signature_status = ocr_report.get("signature_analysis", {}).get("status", "Passed")
-        compression_status = "Alert" if fraud_score > 50.0 else "Passed"
+        compression_status = compress_report.get("status", "Passed")
         
-        # 7. Create Document record
+        # 8. Create Document record
         doc_record = models.Document(
             file_name=upload_file.filename,
             file_type=upload_file.filename.split('.')[-1].upper(),

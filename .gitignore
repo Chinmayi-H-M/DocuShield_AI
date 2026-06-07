@@ -31,6 +31,8 @@ __pycache__/
 # OS files
 .DS_Store
 Thumbs.db
+datasets/
+backend/models/model.pth
 
 document_forensics/forensic_output/
 __pycache__/
