@@ -215,7 +215,7 @@ def train_model(epochs: int = 5, batch_size: int = 16, patience: int = 3, quick_
             
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=1)
         
-        best_val_loss = float("inf")
+        best_val_acc = -1.0
         epochs_no_improve = 0
         best_model_state_local = None
         
@@ -239,6 +239,8 @@ def train_model(epochs: int = 5, batch_size: int = 16, patience: int = 3, quick_
             # Validation epoch
             model.eval()
             val_loss = 0.0
+            val_correct = 0
+            val_total = 0
             with torch.no_grad():
                 for images, labels in val_loader:
                     images, labels = images.to(device), labels.to(device)
@@ -246,15 +248,21 @@ def train_model(epochs: int = 5, batch_size: int = 16, patience: int = 3, quick_
                     loss = criterion(outputs, labels)
                     val_loss += loss.item() * images.size(0)
                     
+                    probs = torch.sigmoid(outputs)
+                    preds = (probs >= 0.5).int()
+                    val_correct += (preds == labels.int()).sum().item()
+                    val_total += labels.size(0)
+                    
             val_loss /= len(val_loader.dataset)
+            val_acc = val_correct / val_total
             
-            logger.info(f"Epoch {epoch+1}/{epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f}")
+            logger.info(f"Epoch {epoch+1}/{epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f} - Val Acc: {val_acc * 100.0:.2f}%")
             
             scheduler.step(val_loss)
             
-            # Checkpoint and early stopping
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
+            # Checkpoint and early stopping based on validation accuracy
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
                 epochs_no_improve = 0
                 best_model_state_local = {k: v.cpu() for k, v in model.state_dict().items()}
             else:

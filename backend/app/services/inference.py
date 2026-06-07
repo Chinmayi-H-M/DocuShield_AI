@@ -6,7 +6,7 @@ import torch
 import logging
 
 from app.services.dataset_loader import val_test_transforms
-from app.services.train_model import get_resnet50_model
+from app.services.train_model import get_model
 
 logger = logging.getLogger("docushield.ml.inference")
 
@@ -41,7 +41,6 @@ class InferenceService:
                 logger.error(f"Failed to load model metadata from {metadata_path}: {e}")
                 
         # 2. Initialize the model
-        from app.services.train_model import get_model
         model = get_model(model_name)
         
         # 3. Load weights mapping to the correct target device
@@ -51,9 +50,10 @@ class InferenceService:
                 model.load_state_dict(state_dict)
                 logger.info(f"Successfully loaded trained model weights from {self.model_path}")
             except Exception as e:
-                logger.error(f"Error loading model weights from {self.model_path}: {e}. Fallback to initialized model.")
+                logger.error(f"Error loading model weights from {self.model_path}: {e}")
+                raise e
         else:
-            logger.warning(f"No trained model found at {self.model_path}. Using initialized model state.")
+            raise FileNotFoundError(f"No trained model found at {self.model_path}")
             
         model.to(self.device)
         model.eval()

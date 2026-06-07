@@ -227,7 +227,6 @@ def upload_documents(
             ml_score=ml_score,
             forensic_score=risk_report["risk_score"]
         )
-        )
         
         # Structured log: risk score generated
         logger.info(json.dumps({
