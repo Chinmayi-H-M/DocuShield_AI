@@ -132,137 +132,30 @@ def get_resnet50_model() -> nn.Module:
     return get_model("resnet50")
 
 
-def generate_tiny_synthetic_dataset(dataset_dir: str):
+def validate_dataset(dataset_dir):
     """
-    Generates a tiny dummy dataset (15 genuine, 15 tampered) if empty,
-    and updates the generator to process all images in backend/datasets/genuine
-    and create a corresponding tampered version for each image.
+    Validates that the Kaggle dataset directory exists and is populated with
+    genuine and tampered document images.
     """
-    import glob
-    import random
-    
     genuine_dir = os.path.join(dataset_dir, "genuine")
     tampered_dir = os.path.join(dataset_dir, "tampered")
-    
-    os.makedirs(genuine_dir, exist_ok=True)
-    os.makedirs(tampered_dir, exist_ok=True)
-    
-    # 1. Fallback: If genuine directory is completely empty, generate 15 fallback genuine images first
-    supported_extensions = ["*.jpg", "*.jpeg", "*.png", "*.JPG", "*.JPEG", "*.PNG"]
-    genuine_files = []
-    seen = set()
-    for ext in supported_extensions:
-        for f in glob.glob(os.path.join(genuine_dir, ext)):
-            abs_p = os.path.abspath(f)
-            norm_p = os.path.normcase(abs_p)
-            if norm_p not in seen:
-                seen.add(norm_p)
-                genuine_files.append(abs_p)
-        
-    if len(genuine_files) == 0:
-        logger.info("Genuine dataset folder is empty. Generating 15 fallback genuine images...")
-        for i in range(15):
-            img = Image.new("RGB", (224, 224), color=(240, 240, 240))
-            d = ImageDraw.Draw(img)
-            d.text((10, 10), f"Genuine Invoice #{1000+i}", fill=(0, 0, 0))
-            d.text((10, 50), "Amount Due: $150.00", fill=(0, 0, 0))
-            img.save(os.path.join(genuine_dir, f"genuine_{i}.png"))
-        # Refresh the list
-        seen = set()
-        genuine_files = []
-        for ext in supported_extensions:
-            for f in glob.glob(os.path.join(genuine_dir, ext)):
-                abs_p = os.path.abspath(f)
-                norm_p = os.path.normcase(abs_p)
-                if norm_p not in seen:
-                    seen.add(norm_p)
-                    genuine_files.append(abs_p)
 
-    # 2. Process all images in backend/datasets/genuine and create a corresponding tampered version for each
-    logger.info(f"Processing all {len(genuine_files)} images in genuine/ to generate tampered/ versions...")
-    
-    tampered_count = 0
-    for file_path in genuine_files:
-        try:
-            basename = os.path.basename(file_path)
-            tampered_file_path = os.path.join(tampered_dir, f"tampered_{basename}")
-            
-            # Do not overwrite existing tampered images if already created
-            if os.path.exists(tampered_file_path):
-                tampered_count += 1
-                continue
-                
-            img = Image.open(file_path).convert("RGB")
-            width, height = img.size
-            
-            tampered_img = img.copy()
-            draw = ImageDraw.Draw(tampered_img)
-            
-            bg_color = (255, 255, 255)
-            try:
-                bg_color = tampered_img.getpixel((5, 5))
-            except Exception:
-                pass
-                
-            # Random combination of text overlay, number mod, date change, rect patch, and region shift
-            techniques = ["text_overlay", "number_mod", "date_change", "rect_patch", "region_shift"]
-            num_to_apply = random.randint(2, len(techniques))
-            applied = random.sample(techniques, num_to_apply)
-            
-            for tech in applied:
-                if tech == "text_overlay":
-                    text = random.choice(["COPY", "PAST DUE", "VOID", "REVISED", "AUDIT", "UNAUTHORIZED", "FORGED"])
-                    x = random.randint(int(width * 0.1), int(width * 0.7))
-                    y = random.randint(int(height * 0.1), int(height * 0.7))
-                    color = random.choice([(255, 0, 0), (0, 0, 255), (128, 128, 128), (0, 0, 0)])
-                    draw.text((x, y), text, fill=color)
-                    
-                elif tech == "number_mod":
-                    patch_w = random.randint(30, 80)
-                    patch_h = random.randint(15, 30)
-                    x = random.randint(int(width * 0.2), int(width * 0.7))
-                    y = random.randint(int(height * 0.2), int(height * 0.8))
-                    draw.rectangle([x, y, x + patch_w, y + patch_h], fill=bg_color)
-                    new_num = f"${random.randint(1, 999)},{random.randint(100, 999)}.{random.randint(10, 99)}"
-                    text_color = (0, 0, 0) if sum(bg_color)/3 > 128 else (255, 255, 255)
-                    draw.text((x + 2, y + 2), new_num, fill=text_color)
-                    
-                elif tech == "date_change":
-                    patch_w = random.randint(60, 100)
-                    patch_h = random.randint(15, 30)
-                    x = random.randint(int(width * 0.2), int(width * 0.7))
-                    y = random.randint(int(height * 0.2), int(height * 0.8))
-                    draw.rectangle([x, y, x + patch_w, y + patch_h], fill=bg_color)
-                    new_date = f"{random.randint(1, 12):02d}/{random.randint(1, 28):02d}/{random.choice([2024, 2025, 2026])}"
-                    text_color = (0, 0, 0) if sum(bg_color)/3 > 128 else (255, 255, 255)
-                    draw.text((x + 2, y + 2), new_date, fill=text_color)
-                    
-                elif tech == "rect_patch":
-                    patch_w = random.randint(40, 120)
-                    patch_h = random.randint(20, 60)
-                    x = random.randint(int(width * 0.15), int(width * 0.75))
-                    y = random.randint(int(height * 0.15), int(height * 0.75))
-                    patch_color = tuple(max(0, min(255, c + random.choice([-15, -10, 10, 15]))) for c in bg_color)
-                    draw.rectangle([x, y, x + patch_w, y + patch_h], fill=patch_color)
-                    
-                elif tech == "region_shift":
-                    patch_w = random.randint(40, 100)
-                    patch_h = random.randint(15, 40)
-                    x = random.randint(int(width * 0.2), int(width * 0.7))
-                    y = random.randint(int(height * 0.2), int(height * 0.8))
-                    crop = tampered_img.crop((x, y, x + patch_w, y + patch_h))
-                    draw.rectangle([x, y, x + patch_w, y + patch_h], fill=bg_color)
-                    dx = random.choice([-15, -10, 10, 15])
-                    dy = random.choice([-15, -10, 10, 15])
-                    tampered_img.paste(crop, (x + dx, y + dy))
-                    
-            # Save tampered version
-            tampered_img.save(tampered_file_path)
-            tampered_count += 1
-        except Exception as e:
-            logger.error(f"Failed to tamper image {file_path}: {e}")
-            
-    logger.info(f"Tampered dataset generated. Created/verified {tampered_count} tampered images.")
+    if not os.path.exists(genuine_dir) or not os.path.exists(tampered_dir):
+        raise FileNotFoundError(
+            f"Kaggle dataset directories not found. Please ensure both "
+            f"'{genuine_dir}' and '{tampered_dir}' directories exist under '{dataset_dir}'."
+        )
+
+    existing_gen = len([f for f in os.listdir(genuine_dir) if f.lower().endswith((".jpg", ".jpeg", ".png"))])
+    existing_tamp = len([f for f in os.listdir(tampered_dir) if f.lower().endswith((".jpg", ".jpeg", ".png"))])
+
+    if existing_gen == 0 or existing_tamp == 0:
+        raise FileNotFoundError(
+            f"Kaggle dataset is empty. Found genuine={existing_gen}, tampered={existing_tamp} images. "
+            f"Please place the Kaggle dataset files in '{dataset_dir}'."
+        )
+
+    logger.info(f"[Dataset Validator] Verified Kaggle dataset: genuine={existing_gen}, tampered={existing_tamp} files.")
 
 
 def train_model(epochs: int = 5, batch_size: int = 16, patience: int = 3, quick_test: bool = False) -> Dict[str, Any]:
@@ -273,8 +166,8 @@ def train_model(epochs: int = 5, batch_size: int = 16, patience: int = 3, quick_
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device for training: {device}")
 
-    # Generate synthetic data if none exists
-    generate_tiny_synthetic_dataset(DATASET_DIR)
+    # Ensure Kaggle dataset exists and is valid
+    validate_dataset(DATASET_DIR)
 
     # Get data loaders
     train_loader, val_loader, test_loader = get_data_loaders(DATASET_DIR, batch_size=batch_size)

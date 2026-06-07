@@ -18,98 +18,39 @@ except ImportError:
     USE_NEW_WEIGHTS_API = False
 
 # ----------------------------------------------------
-# 1. SYNTHETIC DATASET GENERATION
+# 1. DATASET VALIDATION
 # ----------------------------------------------------
-def generate_synthetic_data(base_dir, num_samples=50):
+def validate_dataset(dataset_dir):
     """
-    Generates synthetic genuine and tampered images if the dataset folders are empty.
+    Validates that the Kaggle dataset directory exists and is populated with
+    genuine and tampered document images.
     """
-    genuine_dir = os.path.join(base_dir, "genuine")
-    tampered_dir = os.path.join(base_dir, "tampered")
-    os.makedirs(genuine_dir, exist_ok=True)
-    os.makedirs(tampered_dir, exist_ok=True)
+    genuine_dir = os.path.join(dataset_dir, "genuine")
+    tampered_dir = os.path.join(dataset_dir, "tampered")
 
-    # Check if we already have files
-    existing_gen = len([f for f in os.listdir(genuine_dir) if f.endswith(".jpg")])
-    existing_tamp = len([f for f in os.listdir(tampered_dir) if f.endswith(".jpg")])
+    if not os.path.exists(genuine_dir) or not os.path.exists(tampered_dir):
+        raise FileNotFoundError(
+            f"Kaggle dataset directories not found. Please ensure both "
+            f"'{genuine_dir}' and '{tampered_dir}' directories exist."
+        )
 
-    if existing_gen >= num_samples and existing_tamp >= num_samples:
-        print(f"[Dataset Generator] Found existing files: genuine={existing_gen}, tampered={existing_tamp}. Skipping generation.")
-        return
+    existing_gen = len([f for f in os.listdir(genuine_dir) if f.lower().endswith((".jpg", ".jpeg", ".png"))])
+    existing_tamp = len([f for f in os.listdir(tampered_dir) if f.lower().endswith((".jpg", ".jpeg", ".png"))])
 
-    print(f"[Dataset Generator] Creating {num_samples} genuine and {num_samples} tampered document samples...")
+    if existing_gen == 0 or existing_tamp == 0:
+        raise FileNotFoundError(
+            f"Kaggle dataset is empty. Found genuine={existing_gen}, tampered={existing_tamp} images. "
+            f"Please place the Kaggle dataset files in '{dataset_dir}'."
+        )
 
-    names = ["Aarav", "Aditi", "Arjun", "Ananya", "Dev", "Diya", "Kabir", "Meera", "Rohan", "Siddharth", "Sunita", "Ramesh", "Vijay"]
-    surnames = ["Kumar", "Sharma", "Singh", "Patel", "Mehta", "Joshi", "Roy", "Sen", "Gupta", "Rao", "Nair"]
-    scanners = ["HP ScanJet Enterprise 8500", "Canon imageFORMULA", "Epson WorkForce DS-530", "Fujitsu ScanSnap iX1500"]
-
-    for idx in range(num_samples):
-        # Generate Genuine Document
-        img = Image.new("RGB", (600, 300), (255, 255, 255))
-        draw = ImageDraw.Draw(img)
-        
-        # Draw branding/header
-        draw.rectangle([(0, 0), (600, 60)], fill=(12, 35, 64))
-        draw.text((20, 18), "NATIONAL COOPERATIVE BANK", fill=(255, 255, 255))
-        draw.text((450, 22), "STATEMENT OF ACCOUNT", fill=(200, 220, 240))
-        
-        # Details
-        name = f"{random.choice(names)} {random.choice(surnames)}"
-        ac_num = f"{random.randint(1000, 9999)}-{random.randint(1000, 9999)}-{random.randint(10, 99)}"
-        date_str = f"June {idx+1:02d}, 2026"
-        balance = 10000 + random.randint(500, 5000)
-        
-        draw.text((40, 100), f"Account Holder : {name.upper()}", fill=(30, 30, 30))
-        draw.text((40, 125), f"Account Number : {ac_num}", fill=(30, 30, 30))
-        draw.text((40, 150), f"Statement Date : {date_str}", fill=(30, 30, 30))
-        
-        draw.line([(40, 180), (560, 180)], fill=(200, 200, 200), width=1)
-        
-        draw.text((40, 200), f"Opening Balance: ${balance:,.2f}", fill=(100, 100, 100))
-        draw.text((40, 225), f"Closing Balance: ${balance:,.2f}", fill=(12, 35, 64))
-        draw.text((40, 250), "Account Status : ACTIVE / CLEAN", fill=(40, 120, 40))
-        
-        # Save Genuine with standard EXIF
-        gen_path = os.path.join(genuine_dir, f"genuine_statement_{idx+1}.jpg")
-        exif = img.getexif()
-        exif[305] = random.choice(scanners)
-        exif[306] = f"2026:06:{idx+1:02d} 09:00:00"
-        img.save(gen_path, "JPEG", quality=98, exif=exif)
-
-        # Generate Tampered Document (Double-compressed and Photoshop Exif)
-        # 1. Background compression
-        temp_bg_path = os.path.join(tampered_dir, f"temp_bg_{idx+1}.jpg")
-        img.save(temp_bg_path, "JPEG", quality=75)
-        
-        # 2. Re-open and modify
-        img_tamp = Image.open(temp_bg_path)
-        draw_tamp = ImageDraw.Draw(img_tamp)
-        
-        # Tamper: cover closing balance and redraw a different balance
-        draw_tamp.rectangle([(200, 220), (320, 242)], fill=(255, 255, 255))
-        fake_balance = balance * random.choice([5, 8, 10, 15])
-        draw_tamp.text((205, 224), f"${fake_balance:,.2f}", fill=(12, 35, 64))
-        
-        # Save with Photoshop Exif
-        tamp_path = os.path.join(tampered_dir, f"tampered_statement_{idx+1}.jpg")
-        exif_tamp = img_tamp.getexif()
-        exif_tamp[305] = "Adobe Photoshop 2025 (Windows)"
-        exif_tamp[315] = f"{name} (Altered)"
-        exif_tamp[306] = f"2026:06:{idx+1:02d} 18:30:15"
-        img_tamp.save(tamp_path, "JPEG", quality=90, exif=exif_tamp)
-        
-        # Cleanup temp
-        if os.path.exists(temp_bg_path):
-            os.remove(temp_bg_path)
-
-    print(f"[Dataset Generator] Generation complete. Files saved under '{base_dir}'.")
+    print(f"[Dataset Validator] Verified Kaggle dataset: genuine={existing_gen}, tampered={existing_tamp} files.")
 
 # ----------------------------------------------------
 # 2. MAIN TRAINING PROCESS
 # ----------------------------------------------------
 def main():
     print("=" * 60)
-    print("      DOCUSHIELD AI - RESNET18 FORGERY CLASSIFIER TRAINING     ")
+    print("  DOCUSHIELD AI - RESNET18 KAGGLE DATASET CLASSIFIER TRAINING  ")
     print("=" * 60)
 
     # Resolve paths
@@ -118,8 +59,8 @@ def main():
     models_dir = os.path.join(base_dir, "backend", "models")
     os.makedirs(models_dir, exist_ok=True)
 
-    # 1. Ensure dataset exists
-    generate_synthetic_data(dataset_dir, num_samples=50)
+    # 1. Ensure Kaggle dataset exists and is valid
+    validate_dataset(dataset_dir)
 
     # 2. Image Preprocessing & Transforms
     # Resize 224x224, Normalize with ImageNet stats

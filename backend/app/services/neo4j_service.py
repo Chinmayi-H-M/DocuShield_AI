@@ -168,7 +168,8 @@ def calculate_graph_risk_for_document(
     applicant_name: str,
     address: str,
     phone_numbers: list,
-    db: Session
+    db: Session,
+    income: float = 0.0
 ) -> tuple:
     """
     Checks if the newly uploaded applicant, property, or phone details overlap
@@ -189,6 +190,8 @@ def calculate_graph_risk_for_document(
     shared_property = False
     shared_phone = False
     multi_app = False
+    income_discrepancy = False
+    discrepancy_amount_old = 0.0
 
     for doc in existing_docs:
         # Deserialize layout intelligence or fall back to regex ocr fields
@@ -202,6 +205,7 @@ def calculate_graph_risk_for_document(
         exist_name = (intel.get("applicant_name", {}).get("value") or "").strip().upper()
         exist_addr = (intel.get("address", {}).get("value") or "").strip()
         exist_prop_id = (intel.get("property_id", {}).get("value") or "").strip().upper()
+        exist_income = float(intel.get("income", {}).get("value") or 0.0)
 
         if not exist_name:
             # Fallback to OCR parser fields
@@ -210,6 +214,7 @@ def calculate_graph_risk_for_document(
             exist_name = fields["applicant_name"]
             exist_addr = fields["address"]
             exist_prop_id = fields["property_id"]
+            exist_income = fields["monthly_income"]
 
         if not exist_name:
             continue
@@ -233,6 +238,9 @@ def calculate_graph_risk_for_document(
         # Check: Multiple applications under the same name
         if exist_name == applicant_name:
             multi_app = True
+            if exist_income > 0 and income > 0 and abs(exist_income - income) > 1.0:
+                income_discrepancy = True
+                discrepancy_amount_old = exist_income
 
     if shared_property:
         penalty += 30
@@ -240,6 +248,9 @@ def calculate_graph_risk_for_document(
         penalty += 25
     if multi_app:
         penalty += 15
+    if income_discrepancy:
+        penalty += 45
+        reasons.append(f"Income discrepancy: Extracted income (INR {income:,.2f}) deviates from previously submitted salary records (INR {discrepancy_amount_old:,.2f}) for applicant '{applicant_name}'")
 
     reason_str = "; ".join(reasons) if reasons else ""
     if multi_app and not reasons:
